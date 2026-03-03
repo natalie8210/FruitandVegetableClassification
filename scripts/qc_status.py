@@ -1,29 +1,35 @@
 import cv2
 import pandas as pd
 import numpy as np
-import os 
+import os
 
-raw_dir = "data/raw/"
-subfolders = [f for f in os.listdir(raw_dir) if os.path.isdir(os.path.join(raw_dir, f))]
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+
+raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
+labels_dir = os.path.join(PROJECT_ROOT, "data", "labels")
+
+subfolders = [
+    f for f in os.listdir(raw_dir)
+    if os.path.isdir(os.path.join(raw_dir, f))
+]
 print(subfolders)
-processed_dir = "data/processed"
 
-# Creating the directory path specified in processed_dir
-os.makedirs(processed_dir, exist_ok=True) 
-
+# Creating the directory path specified labels_dir
+os.makedirs(labels_dir, exist_ok=True)
 
 # Stating the thresholds
-blue_channel_min, blue_channel_max = 0.1, 0.6
-exposure_min, exposure_max = 0.30, 0.90
-resolution_val_min, resolution_val_max = (350,350), (12000,12000)
-blur_threshold = 5
-saturation_min = 0.10
-occupancy_score_min, occupancy_score_max = 0.30, 0.70
+# All thresholds computed from distribution of each metric
+blue_excess_min, blue_excess_max = -0.25, 0.025
+exposure_min, exposure_max = 0.4, 0.8
+blur_min = 30
+saturation_min = 0.20
+occupancy_score_min = 0.20
 rows = []
 
 for folder_id in subfolders:
     folder_path = os.path.join(raw_dir, folder_id)
-    
+
     for filename in os.listdir(folder_path):
         if not filename.lower().endswith((".jpg", ".jpeg", ".png")):
             continue
@@ -36,39 +42,37 @@ for folder_id in subfolders:
             print(f"{filename} Failed, corrupt image detected")
             continue
 
-        height, width, channels = img.shape
-
-        # Resolution
-        resolution_valid = (
-            resolution_val_min[0] <= width <= resolution_val_max[0] and 
-            resolution_val_min[1] <= height <= resolution_val_max[1] 
-        )
-
+        # Resizing to 90x90
         # Normalizing the image pixel data to be 0-1
-        img_norm = img / 255.0 
-    
-        # Blue channel dominance
-        blue_channel_score = img_norm[:, :, 0].mean()
+        img_resized = cv2.resize(img, (90, 90), interpolation=cv2.INTER_AREA)
+        img_norm = img_resized / 255.0
 
-        # Exposure
-        exposure_score = img_norm.mean()
+        # Blue channel dominance
+        # relative blue excess
+        b = img_norm[:, :, 0]
+        g = img_norm[:, :, 1]
+        r = img_norm[:, :, 2]
+        # blue higher than average of R and G
+        blue_excess = (b - 0.5*(r + g)).mean()
 
         # Saturation
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV) 
-        saturation_score = (hsv[:, :, 1] / 255.0).mean() 
+        hsv = cv2.cvtColor(img_resized, cv2.COLOR_BGR2HSV)
+        h, w = hsv.shape[:2]
+        cy0, cy1 = int(0.20*h), int(0.80*h)
+        cx0, cx1 = int(0.20*w), int(0.80*w)
+        sat_center = (hsv[cy0:cy1, cx0:cx1, 1] / 255.0).mean()
+
+        # Exposure
+        v = hsv[:, :, 2] / 255.0
+        exposure_score = v.mean() # 0-1
 
         # Occupancy
         h, s, v = cv2.split(hsv)
-
         s_norm = s / 255.0
         v_norm = v / 255.0
-
-        color_mask = s_norm > 0.15 
-
+        color_mask = s_norm > 0.15
         brightness_mask = v_norm > 0.05
-
         fruit_mask = color_mask & brightness_mask
-
         fruit_mask = fruit_mask.astype("uint8") * 255
 
         kernel = np.ones((7,7), np.uint8)
@@ -87,44 +91,38 @@ for folder_id in subfolders:
 
 
         # Blur
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
         blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
-        blur_valid = blur_score > blur_threshold # Higher blur score represents a sharper image
-  
-        qc_checks = {
-            "blue_channel_issue": blue_channel_min <= blue_channel_score <= blue_channel_max,
-            "exposure_issue": exposure_min <= exposure_score <= exposure_max,
-            "resolution_issue": resolution_valid,
-            "blur_issue": blur_valid,
-            "saturation_issue": saturation_score >= saturation_min,
-            "occupancy_issue": occupancy_score_min <= occupancy_score <= occupancy_score_max,
+        blur_valid = blur_score > blur_min
 
+        qc_checks = {
+            "blue_excess_issue": blue_excess_min <= blue_excess <= blue_excess_max,
+            "exposure_issue": exposure_min <= exposure_score <= exposure_max,
+            "blur_issue": blur_valid,
+            "saturation_issue": sat_center >= saturation_min,
+            "occupancy_issue": occupancy_score >= occupancy_score_min
             }
-    
+
         reasons = []
-        if not (blue_channel_min <= blue_channel_score <= blue_channel_max): reasons.append("blue_channel_issue")
-        if not (exposure_min <= exposure_score <= exposure_max): reasons.append("exposure_issue")
-        if not (resolution_valid): reasons.append("resolution_issue")
-        if not (blur_valid): reasons.append("blur_issue")
-        if not (saturation_score >= saturation_min): reasons.append("saturation_issue")
-        if not (occupancy_score_min <= occupancy_score <= occupancy_score_max): reasons.append("occupancy_issue")
+        if not qc_checks["blue_excess_issue"]: reasons.append("blue_channel_issue")
+        if not qc_checks["exposure_issue"]: reasons.append("exposure_issue")
+        if not qc_checks["blur_issue"]: reasons.append("blur_issue")
+        if not qc_checks["saturation_issue"]: reasons.append("saturation_issue")
+        if not qc_checks["occupancy_issue"]: reasons.append("occupancy_issue")
 
         qc_status = "pass" if not reasons else "flagged"
-    
+
         rows.append({
             "image_id": filename,
             "qc_status": qc_status,
-            "blue_score": blue_channel_score,
+            "blue_score": blue_excess,
             "exposure_score": exposure_score,
             "blur_score": blur_score,
-            "saturation_score": saturation_score,
+            "saturation_score": sat_center,
             "occupancy_score" : occupancy_score,
-            "width": width,
-            "height": height,
             "fail_reasons": ", ".join(reasons) if reasons else "none"
         })
 
 qc = pd.DataFrame(rows)
-qc.to_csv("labels/qc_metrics.csv", index=False)
+qc.to_csv("data/labels/qc_metrics.csv", index=False)
 print(qc["qc_status"].value_counts())
-
