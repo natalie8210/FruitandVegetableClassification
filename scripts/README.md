@@ -13,6 +13,4 @@ This outputs the count of flag vs. passed photos. It also creates qc_metrics.csv
 
 <img width="277" height="218" alt="image" src="https://github.com/user-attachments/assets/05f50e24-e0bf-432f-84df-28e0bb19bc68" />
 
-Everyone's raw data will be uploaded to the `data/raw/` directory on GitHub so there should be no need to do anything else but run the above code. 
-
-If you are just wanting to test the functionality of qc_status.py (Prof. Wang's task), then once the repo is cloned, you can upload test data (photos) to the `raw` folder inside whatever environment you are working in. 
+Once the repo is cloned, you can upload photos to the `raw` folder inside whatever environment you are working in. Only upload subfolders to the `raw` folder, for example, when downlading from OneDrive, keep the folder structure and have all the photos be in their respective folders, so `raw` should be a directory of folders (e.g. 01471890, 01483309, etc.).
