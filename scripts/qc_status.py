@@ -3,11 +3,14 @@ import pandas as pd
 import numpy as np
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
+import argparse
 
-raw_dir = os.path.join(PROJECT_ROOT, "data", "raw")
-metrics_dir = os.path.join(PROJECT_ROOT, "data", "metrics")
+parser = argparse.ArgumentParser()
+parser.add_argument("--raw_dir", type=str, default="data/raw")
+args = parser.parse_args()
+
+raw_dir = args.raw_dir
+metrics_dir = "data/metrics"
 
 subfolders = [
     f for f in os.listdir(raw_dir)
