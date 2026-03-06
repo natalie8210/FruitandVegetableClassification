@@ -31,7 +31,7 @@ for folder_id in subfolders:
     folder_path = os.path.join(raw_dir, folder_id)
 
     for filename in os.listdir(folder_path):
-        if not filename.lower().endswith((".jpg", ".jpeg", ".png")):
+        if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".heic")):
             continue
 
         img_path = os.path.join(folder_path, filename)
