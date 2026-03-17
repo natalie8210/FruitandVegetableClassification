@@ -7,6 +7,5 @@ pyefd
 mahotas
 matplotlib
 pandas
-os
 joblib
 xgboost
